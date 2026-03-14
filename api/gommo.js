@@ -3,7 +3,13 @@
  * Routes: /api/gommo/* → https://api.gommo.net/*
  * 
  * Gommo uses x-www-form-urlencoded body format.
+ * IMPORTANT: maxDuration set to 60s because image generation can take 30s+
  */
+
+export const config = {
+  maxDuration: 60,
+};
+
 export default async function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -19,13 +25,16 @@ export default async function handler(req, res) {
     const proxyPath = fullUrl.replace(/^\/api\/gommo\/?/, '');
 
     const targetUrl = `https://api.gommo.net/${proxyPath}`;
-    console.log(`[Gommo Proxy] ${req.method} → ${targetUrl}`);
+    console.log(`[Gommo Proxy] ${req.method} → ${targetUrl.substring(0, 100)}...`);
 
+    // Build clean headers
     const forwardHeaders = {};
-    for (const [key, value] of Object.entries(req.headers)) {
-      if (!['host', 'connection', 'transfer-encoding'].includes(key.toLowerCase())) {
-        forwardHeaders[key] = value;
-      }
+    const contentType = req.headers['content-type'] || '';
+    if (contentType) {
+      forwardHeaders['Content-Type'] = contentType;
+    }
+    if (req.headers['authorization']) {
+      forwardHeaders['Authorization'] = req.headers['authorization'];
     }
 
     const fetchOptions = {
@@ -33,33 +42,33 @@ export default async function handler(req, res) {
       headers: forwardHeaders,
     };
 
-    // Gommo uses URL-encoded bodies — forward raw body
+    // Gommo uses URL-encoded bodies — handle properly
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      const contentType = req.headers['content-type'] || '';
       if (contentType.includes('application/x-www-form-urlencoded')) {
         // Reconstruct URL-encoded body from parsed body
         if (typeof req.body === 'object' && req.body !== null) {
           fetchOptions.body = new URLSearchParams(req.body).toString();
-        } else {
+        } else if (typeof req.body === 'string') {
           fetchOptions.body = req.body;
         }
       } else {
-        fetchOptions.body = JSON.stringify(req.body);
+        const bodyStr = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+        fetchOptions.body = bodyStr;
       }
     }
 
     const response = await fetch(targetUrl, fetchOptions);
 
-    for (const [key, value] of response.headers.entries()) {
-      if (!['transfer-encoding', 'content-encoding'].includes(key.toLowerCase())) {
-        res.setHeader(key, value);
-      }
+    // Forward essential response headers only
+    const respContentType = response.headers.get('content-type');
+    if (respContentType) {
+      res.setHeader('Content-Type', respContentType);
     }
 
     const data = await response.arrayBuffer();
     res.status(response.status).send(Buffer.from(data));
   } catch (error) {
-    console.error('[Gommo Proxy] Error:', error);
+    console.error('[Gommo Proxy] Error:', error.message);
     res.status(502).json({ error: 'Proxy error', message: error.message });
   }
 }

@@ -250,6 +250,16 @@
                                 <h3 class="card-title">🌍 Environment</h3>
                                 <textarea id="environment-desc" class="textarea textarea-xs"
                                     placeholder="on a purple yoga mat, clean white background, minimal scene"></textarea>
+                                <div class="env-upload-section" style="margin-top: var(--space-md);">
+                                    <p class="card-desc" style="margin-bottom: var(--space-sm);">📸 Ảnh Environment Reference (tuỳ chọn) — Upload ảnh background/phòng để giữ nhất quán</p>
+                                    <div class="upload-zone upload-zone-sm" id="env-upload-zone">
+                                        <input type="file" id="env-ref-upload" accept="image/*" multiple hidden>
+                                        <span class="upload-icon">🏞️</span>
+                                        <p>Kéo thả hoặc click để upload ảnh nền</p>
+                                        <p class="upload-hint">PNG/JPG, tối đa 3 ảnh</p>
+                                    </div>
+                                    <div class="ref-preview-grid" id="env-ref-previews"></div>
+                                </div>
                             </div>
                         </div>
                     </div>

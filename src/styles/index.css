@@ -947,6 +947,19 @@ body {
   margin-top: var(--space-xs);
 }
 
+.upload-zone-sm {
+  padding: var(--space-md);
+}
+
+.upload-zone-sm .upload-icon {
+  font-size: 1.4rem;
+  margin-bottom: var(--space-xs);
+}
+
+.upload-zone-sm p {
+  font-size: 0.8rem;
+}
+
 .ref-preview-grid {
   display: flex;
   gap: var(--space-sm);

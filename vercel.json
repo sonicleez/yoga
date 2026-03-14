@@ -2,6 +2,11 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "functions": {
+    "api/*.js": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     { "source": "/api/google-ai/:path*", "destination": "/api/google-ai" },
     { "source": "/api/vertex-key/:path*", "destination": "/api/vertex-key" },

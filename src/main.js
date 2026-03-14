@@ -225,6 +225,12 @@ function rebuildFromState() {
         renderRefPreviews();
     }
 
+    // Restore environment image previews
+    if (state.environmentImages?.length > 0) {
+        console.log(`  🏞️ Restoring ${state.environmentImages.length} environment images`);
+        renderEnvRefPreviews();
+    }
+
     // Restore step
     if (state.currentStep > 0) {
         console.log(`  📍 Restoring step ${state.currentStep}`);
@@ -588,6 +594,27 @@ function initCharacterPanel() {
     $('#btn-generate-prompts').addEventListener('click', () => {
         generatePrompts();
     });
+
+    // === Environment image upload zone ===
+    const envUploadZone = $('#env-upload-zone');
+    const envFileInput = $('#env-ref-upload');
+
+    envUploadZone.addEventListener('click', () => envFileInput.click());
+    envUploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        envUploadZone.classList.add('dragover');
+    });
+    envUploadZone.addEventListener('dragleave', () => {
+        envUploadZone.classList.remove('dragover');
+    });
+    envUploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        envUploadZone.classList.remove('dragover');
+        handleEnvFiles(e.dataTransfer.files);
+    });
+    envFileInput.addEventListener('change', (e) => {
+        handleEnvFiles(e.target.files);
+    });
 }
 
 function handleFiles(files) {
@@ -629,6 +656,53 @@ function renderRefPreviews() {
             newRefs.splice(i, 1);
             setState('referenceImages', newRefs);
             renderRefPreviews();
+        });
+        container.appendChild(thumb);
+    });
+}
+
+// === Environment image upload handling ===
+
+function handleEnvFiles(files) {
+    const state = getState();
+    const refs = [...(state.environmentImages || [])];
+
+    for (const file of files) {
+        if (refs.length >= 3) {
+            showToast('⚠️ Tối đa 3 ảnh environment!', 'error');
+            break;
+        }
+        if (!file.type.startsWith('image/')) continue;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const base64 = e.target.result.split(',')[1];
+            refs.push(base64);
+            setState('environmentImages', refs);
+            renderEnvRefPreviews();
+            showToast('🏞️ Đã thêm ảnh environment!', 'success');
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function renderEnvRefPreviews() {
+    const container = $('#env-ref-previews');
+    const refs = getState().environmentImages || [];
+    container.innerHTML = '';
+
+    refs.forEach((base64, i) => {
+        const thumb = document.createElement('div');
+        thumb.className = 'ref-thumb';
+        thumb.innerHTML = `
+      <img src="data:image/png;base64,${base64}" alt="Env Reference ${i + 1}">
+      <button class="ref-thumb-remove" data-index="${i}">✕</button>
+    `;
+        thumb.querySelector('.ref-thumb-remove').addEventListener('click', () => {
+            const newRefs = [...(getState().environmentImages || [])];
+            newRefs.splice(i, 1);
+            setState('environmentImages', newRefs);
+            renderEnvRefPreviews();
         });
         container.appendChild(thumb);
     });
@@ -1048,6 +1122,7 @@ function generateAllImages() {
         model: state.imageModel,
         aspectRatio: state.aspectRatio,
         referenceImages: state.referenceImages,
+        environmentImages: state.environmentImages || [],
     });
 }
 
@@ -1092,6 +1167,7 @@ function generateSingleScene(sceneIndex) {
         model: state.imageModel,
         aspectRatio: state.aspectRatio,
         referenceImages: state.referenceImages,
+        environmentImages: state.environmentImages || [],
     });
 }
 
@@ -1143,6 +1219,7 @@ function editSceneWithAI(sceneIndex, editPrompt, targetFrame) {
         model: state.imageModel,
         aspectRatio: state.aspectRatio,
         referenceImages: state.referenceImages,
+        environmentImages: state.environmentImages || [],
         targetFrame: targetFrame
     };
 

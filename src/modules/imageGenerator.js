@@ -150,7 +150,10 @@ export async function generateImage(prompt, apiKey, options = {}) {
     console.log(`🖼️ [ImageGen] generateImage() → Provider: ${provider}, Model: ${options.model || 'default'}`);
     console.log(`🖼️ [ImageGen] Prompt (${prompt.length} chars): "${prompt.substring(0, 100)}..."`);
     if (options.referenceImages?.length) {
-        console.log(`🖼️ [ImageGen] Reference images: ${options.referenceImages.length} provided`);
+        console.log(`🖼️ [ImageGen] Character reference images: ${options.referenceImages.length} provided`);
+    }
+    if (options.environmentImages?.length) {
+        console.log(`🏞️ [ImageGen] Environment reference images: ${options.environmentImages.length} provided`);
     }
 
     if (provider === 'vertex-key') {
@@ -228,22 +231,41 @@ async function generateImageGoogleAI(prompt, apiKey, options = {}) {
         aspectRatio = '16:9',
         imageSize = '2K',
         referenceImages = [],
+        environmentImages = [],
     } = options;
 
     console.group(`🌐 [GoogleAI] generateImageGoogleAI()`);
     console.log(`📋 Model: ${model} | AR: ${aspectRatio} | Size: ${imageSize}`);
-    console.log(`📎 Reference images: ${referenceImages.length}`);
+    console.log(`📎 Character refs: ${referenceImages.length} | Env refs: ${environmentImages.length}`);
     console.time('⏱️ GoogleAI API call');
 
     const API_BASE = GOOGLE_AI_BASE;
 
-    // Build parts
-    const parts = [{ text: prompt }];
+    // Build parts — character references first, then env, then prompt
+    const parts = [];
+
+    // Add character reference images
     for (const refImg of referenceImages) {
+        parts.push({ text: 'Character reference image — keep this character appearance exactly consistent:' });
         parts.push({
             inline_data: { mime_type: 'image/png', data: refImg },
         });
     }
+
+    // Add environment reference images
+    for (const envImg of environmentImages) {
+        parts.push({ text: 'Environment/background reference image — MUST reproduce this exact same environment, lighting, colors, floor, and background elements:' });
+        parts.push({
+            inline_data: { mime_type: 'image/png', data: envImg },
+        });
+    }
+
+    // Build final prompt with environment consistency instruction
+    let finalPrompt = prompt;
+    if (environmentImages.length > 0) {
+        finalPrompt = `CRITICAL REQUIREMENT: The environment, background, lighting, floor/mat, and all surroundings MUST exactly match the provided environment reference image(s). Only the character's pose should change — the setting must remain identical. \n\n${prompt}`;
+    }
+    parts.push({ text: finalPrompt });
 
     const body = {
         contents: [{ parts }],
@@ -274,6 +296,14 @@ async function generateImageGoogleAI(prompt, apiKey, options = {}) {
         console.error(`❌ [GoogleAI] Error response:`, error);
         console.timeEnd('⏱️ GoogleAI API call');
         console.groupEnd();
+        
+        // Detect common proxy/Vercel errors
+        if (response.status === 413) {
+            throw new Error('Request payload too large. Try removing some reference images or reducing image sizes.');
+        }
+        if (response.status === 502 || response.status === 504) {
+            throw new Error(`Proxy timeout (${response.status}). The image generation took too long. Try again or use a faster model.`);
+        }
         throw new Error(error?.error?.message || `Google AI error: ${response.status}`);
     }
 
@@ -311,11 +341,13 @@ async function generateImageVertexKey(prompt, apiKey, options = {}) {
     const {
         model = 'gemini-image-2k',
         referenceImages = [],
+        environmentImages = [],
     } = options;
 
     console.group(`🔑 [VertexKey] generateImageVertexKey()`);
     console.log(`📋 Model: ${model}`);
     console.log(`📋 Key: ${apiKey ? apiKey.substring(0, 10) + '...' : 'MISSING'}`);
+    console.log(`📎 Character refs: ${referenceImages.length} | Env refs: ${environmentImages.length}`);
     console.time('⏱️ VertexKey API call');
 
     const VERTEX_BASE = VERTEX_KEY_BASE;
@@ -323,7 +355,7 @@ async function generateImageVertexKey(prompt, apiKey, options = {}) {
     // Build messages — use chat completions (not /images/generations which hangs/502s)
     const messages = [];
 
-    // Add reference images if provided (for character consistency)
+    // Add character reference images if provided (for character consistency)
     if (referenceImages.length > 0) {
         const refContent = [
             { type: 'text', text: 'Use this character reference for visual consistency in the generated image:' },
@@ -338,10 +370,28 @@ async function generateImageVertexKey(prompt, apiKey, options = {}) {
         messages.push({ role: 'assistant', content: 'I will use this character as reference for the generated image.' });
     }
 
-    // Main image prompt
+    // Add environment reference images if provided (for background consistency)
+    if (environmentImages.length > 0) {
+        const envContent = [
+            { type: 'text', text: 'Environment/background reference. You MUST reproduce this EXACT same environment — same room, floor, mat, lighting, colors, and all background elements. Only the character pose changes, the setting stays identical:' },
+        ];
+        for (const envImg of environmentImages) {
+            envContent.push({
+                type: 'image_url',
+                image_url: { url: `data:image/png;base64,${envImg}` },
+            });
+        }
+        messages.push({ role: 'user', content: envContent });
+        messages.push({ role: 'assistant', content: 'I will reproduce this exact environment, keeping every background element, lighting condition, floor/mat, and surrounding detail identical. Only the character pose will change.' });
+    }
+
+    // Main image prompt — add environment consistency constraint if env images present
+    const envConstraint = environmentImages.length > 0
+        ? 'IMPORTANT: Keep the environment/background EXACTLY the same as the reference — same room, mat, floor, lighting, colors. Only the character pose changes. '
+        : '';
     messages.push({
         role: 'user',
-        content: `Generate an image: ${prompt}`,
+        content: `${envConstraint}Generate an image: ${prompt}`,
     });
 
     const body = {
@@ -369,6 +419,13 @@ async function generateImageVertexKey(prompt, apiKey, options = {}) {
         console.error('❌ [VertexKey] Error response:', error);
         console.timeEnd('⏱️ VertexKey API call');
         console.groupEnd();
+        
+        if (response.status === 413) {
+            throw new Error('Request payload too large. Try removing some reference images.');
+        }
+        if (response.status === 502 || response.status === 504) {
+            throw new Error(`Proxy timeout (${response.status}). Image generation took too long. Try again.`);
+        }
         throw new Error(error?.error?.message || `Vertex Key error: ${response.status}`);
     }
 
@@ -457,6 +514,7 @@ async function generateImageGommo(prompt, apiKey, options = {}) {
         model = 'google_nano_banana_pro',
         aspectRatio = '16:9',
         referenceImages = [],
+        environmentImages = [],
     } = options;
 
     console.group(`🍌 [Gommo] generateImageGommo()`);
@@ -495,17 +553,18 @@ async function generateImageGommo(prompt, apiKey, options = {}) {
     // Strategy: Upload → URL strings array → (fallback) base64 data URI → (fallback) no subjects
     let subjectUrls = [];   // uploaded URLs for Strategy 1
     let base64Refs = [];    // base64 data URIs for Strategy 2 fallback
-    if (referenceImages && referenceImages.length > 0) {
+    if ((referenceImages && referenceImages.length > 0) || (environmentImages && environmentImages.length > 0)) {
+        const allRefs = [...referenceImages, ...environmentImages];
         try {
-            for (let i = 0; i < referenceImages.length; i++) {
-                let base64Raw = referenceImages[i];
+            for (let i = 0; i < allRefs.length; i++) {
+                let base64Raw = allRefs[i];
                 // Strip data URI prefix if present — Gommo Upload expects raw base64
                 if (base64Raw.startsWith('data:')) {
                     base64Raw = base64Raw.split(',')[1];
                 }
 
                 const sizeKB = Math.round((base64Raw.length * 0.75) / 1024);
-                console.log(`📤 [Gommo] Processing ref image ${i + 1}/${referenceImages.length} (${sizeKB}KB)...`);
+                console.log(`📤 [Gommo] Processing ref image ${i + 1}/${allRefs.length} (${sizeKB}KB)...`);
 
                 // Skip tiny/invalid images (< 1KB is likely broken)
                 if (sizeKB < 1) {
@@ -754,6 +813,11 @@ export async function generateSceneImages(framePrompt, apiKey, options = {}) {
         console.log(`📎[SceneImages] Using CUSTOM reference image for this scene`);
     }
 
+    // Always forward environmentImages
+    if (options.environmentImages?.length > 0) {
+        console.log(`🏞️[SceneImages] Forwarding ${options.environmentImages.length} environment images`);
+    }
+
     if (!effectiveOptions.targetFrame || effectiveOptions.targetFrame === 'start') {
         // 1. Generate start frame using original character image from options
         console.log(`🟢[SceneImages] Generating START frame...`);
@@ -777,8 +841,15 @@ export async function generateSceneImages(framePrompt, apiKey, options = {}) {
         console.log(`🔴[SceneImages] Generating END frame...`);
         const endOptions = { ...options };
 
+        // ALWAYS forward environment images for END frame (environment consistency)
+        if (options.environmentImages?.length > 0) {
+            endOptions.environmentImages = options.environmentImages;
+            console.log(`🏞️[SceneImages] Environment images forwarded to END frame: ${options.environmentImages.length}`);
+        }
+
         if (options.targetFrame === 'end') {
             // we are generating only END. Use the options.referenceImages (which should be prepared by caller)
+            // Environment images already set above
         } else {
             if (startResult?.base64) {
                 endOptions.referenceImages = [startResult.base64];

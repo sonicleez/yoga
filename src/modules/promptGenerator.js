@@ -555,11 +555,17 @@ function buildVideoPrompt({ frames, scene }) {
  * Build 1 frame prompt (start hoặc end)
  */
 function buildFramePrompt({ frameType, frameData, scene, config, stylePreset, analysis, view }) {
+    // Build environment layer with consistency emphasis
+    let environmentLayer = config.environment;
+    if (environmentLayer) {
+        environmentLayer = `${environmentLayer}. The environment, background, floor/mat, and lighting must remain exactly consistent across all frames`;
+    }
+
     const layers = {
         character: config.characterDescription,
         pose: `${scene.name} yoga pose — ${frameType === 'start' ? 'starting position' : 'final hold position'}, ${frameData.body}`,
         expression: `${frameData.eyes}, ${frameData.expression}`,
-        environment: config.environment,
+        environment: environmentLayer,
         style: stylePreset.stylePrompt,
         composition: getCompositionForView(view),
     };
